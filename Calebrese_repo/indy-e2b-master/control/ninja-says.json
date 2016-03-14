@@ -1,0 +1,10 @@
+{
+  "temp":"absolute"
+   , "bg":100
+   , "tick":0
+   , "eventualBG":100
+   , "snoozeBG":100
+   , "reason":"Ninja mode"
+   , "duration":0
+   , "rate":0
+}
