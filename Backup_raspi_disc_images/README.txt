@@ -1,4 +1,16 @@
 
+2016-05-01:
+Closed day and night for ~48 hours.  Just addded reboot every 30 minutes during nighttime to cron, but haven't tested it yet (will do so night of 5/1)
+
+
+2016-04-27:
+garbage
+
+
+2016-04-26:
+garbage
+
+
 2016-04-24:
 First full day of closed-looping, all at home on wifi.  Using wicd-curses, removed all static IPs and went back to DDNS, with the hostname pipan.local to find it on network/putty.
 
