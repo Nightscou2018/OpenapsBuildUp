@@ -1,0 +1,281 @@
+[alias]
+last_five_hours = report invoke last_five_pump_hours.json last_five_cgm_hours.json
+gather-profile = report invoke settings/settings.json settings/bg_targets.json settings/insulin_sensitivities.json settings/active_basal_profile.json settings/profile.json
+monitor-pump = report invoke monitor/clock.json monitor/temp_basal.json monitor/pump-history.json monitor/iob.json monitor/battery.json monitor/reservoir.json monitor/status.json
+monitor-cgm-ns = report invoke monitor/glucose-NS.json
+monitor-cgm = report invoke monitor/glucose.json
+preflight = ! bash -c "echo -n \"mmtune: \" && openaps use pump mmtune && rm -f monitor/clock.json && openaps report invoke monitor/clock.json 2>/dev/null && grep -q T monitor/clock.json && echo PREFLIGHT OK || (mm-stick warmup || (echo PREFLIGHT SLEEP && sleep 120); echo PREFLIGHT FAIL; exit 1)"
+preflight_carelink = ! bash -c "rm -f monitor/clock.json && openaps report invoke monitor/clock.json 2>/dev/null && grep -q T monitor/clock.json && echo PREFLIGHT OK || (mm-stick warmup || (echo PREFLIGHT SLEEP && sleep 120); echo PREFLIGHT FAIL; exit 1)"
+clear-files = ! bash -c "cd enact/;ls | grep -v "placeholder.file" | xargs rm -f;cd .. ;cd monitor/;ls | grep -v "placeholder.file" | xargs rm -f;cd ..;cd settings/;ls | grep -v "placeholder.file" | xargs rm -f;cd ..;cd upload/;ls | grep -v "placeholder.file" | xargs rm -f;cd .."
+loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps monitor-cgm-ns && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo No CGM data."
+retry-loop = ! bash -c "until(openaps preflight);do sleep 5; done && openaps loop"
+git-push = ! bash -c "git gc && (git add . && git commit --all -m '.' && git push --force) || (git remote add origin https://github.com/mikestebbins/openapsdev.git && git add . && git commit --all -m '.' && git push --force) || (git remote set-url https://github.com/mikestebbins/openapsdev.git && git add . && git commit --all -m '.' && git push --force) && echo 'pushed to github' || echo 'unable to push to github'"
+git-pull = ! bash -c "git gc && (git reset --hard origin/master) || (git remote add origin https://github.com/mikestebbins/openapsdev.git && git reset --hard origin/master) || (git remote set-url https://github.com/mikestebbins/openapsdev.git && git reset --hard origin/master) && echo 'successfully pulled from github' || echo 'unable to push to github'"
+enact = ! bash -c "./enact.py &> /dev/null || echo "error creating enacted""
+latest-ns-treatment-time = ! bash -c "nightscout latest-openaps-treatment $NIGHTSCOUT_HOST | json created_at"
+format-latest-nightscout-treatments = ! bash -c "nightscout cull-latest-openaps-treatments monitor/pump-history-zoned.json settings/model.json $(openaps latest-ns-treatment-time) > upload/latest-treatments.json"
+upload-recent-treatments = ! bash -c "openaps format-latest-nightscout-treatments && test $(json -f upload/latest-treatments.json -a created_at eventType | wc -l ) -gt 0 && (ns-upload $NIGHTSCOUT_HOST $API_SECRET treatments.json upload/latest-treatments.json ) || echo \"No recent treatments to upload\""
+status-upload = ! bash -c "openaps report invoke monitor/clock-zoned.json && openaps report invoke monitor/upload-status.json && ns-upload $NIGHTSCOUT_HOST $API_SECRET devicestatus.json monitor/upload-status.json"
+ns-upload-all = ! bash -c "openaps status-upload && openaps report invoke monitor/pump-history.json && openaps report invoke monitor/pump-history-zoned.json && openaps report invoke settings/model.json && openaps upload-recent-treatments"
+history = ! bash -c "(openaps report invoke monitor/model.json monitor/status.json monitor/pump-history.json monitor/clock-zoned.json monitor/pump-history-zoned.json && test $(cat monitor/status.json | json bolusing) == false) || (echo Pump bolusing, waiting to pull history; exit 1)"
+history-retry = ! bash -c "openaps history || (echo history failed, waiting before trying again && sleep 5 && openaps history)"
+cleanup = ! bash -c "oref0-reset-git"
+crontest = ! bash -c "echo hey Mike >> test_log"
+
+--------------------------------------------------------------------------------------------------
+My updated code
+JASONS
+get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps glucose-local 2>/dev/null || ( openaps glucose-ns && grep -q sgv monitor/glucose-ns.json && openaps use raw shell monitor/glucose-ns.json monitor/cal-ns.json 150 > monitor/glucose.json )"
+MINE 
+get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps monitor-cgm 2>/dev/null || ( openaps monitor-cgm-ns > monitor/glucose.json )"
+
+
+
+WAS
+loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps monitor-cgm-ns && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo No CGM data."
+IS
+loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps get-bg && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo Error during LOOP."
+
+
+--------------------------------------------------------------------------------------------------
+Jasons code
+loop = ! bash -c "openaps preflight && openaps history-retry && openaps upload && openaps gather && openaps get-bg && openaps enact && openaps status-upload"
+
+get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps glucose-local 2>/dev/null || ( openaps glucose-ns && grep -q sgv monitor/glucose-ns.json && openaps use raw shell monitor/glucose-ns.json monitor/cal-ns.json 150 > monitor/glucose.json )"
+
+wait-for-bg = ! bash -c "touch monitor/glucose.json; cp monitor/glucose.json monitor/last-glucose.json; while(diff -q monitor/last-glucose.json monitor/glucose.json); do echo -n .; sleep 10; openaps get-bg; done"
+
+
+glucose-local = report invoke monitor/glucose.json
+glucose-ns = report invoke monitor/glucose-ns.json monitor/cal-ns.json
+
+[report "monitor/glucose-ns.json"]
+device = ns-bgnow
+use = shell
+reporter = JSON
+
+[report "monitor/glucose.json"]
+device = cgm
+count = 5
+use = iter_glucose
+reporter = JSON
+--------------------------------------------------------------------------------------------------
+
+
+[report "monitor/glucose.json"]
+device = cgm
+use = iter_glucose
+reporter = JSON
+count = 5
+
+[report "monitor/glucose-NS.json"]
+device = curl
+use = shell
+reporter = text
+
+[report "settings/settings.json"]
+device = pump
+use = read_settings
+reporter = JSON
+
+[report "settings/bg_targets.json"]
+device = pump
+use = read_bg_targets
+reporter = JSON
+
+[report "settings/insulin_sensitivities.json"]
+device = pump
+use = read_insulin_sensitivities
+reporter = JSON
+
+[report "settings/basal_profile.json"]
+device = pump
+use = read_basal_profile_std
+reporter = JSON
+
+[report "settings/model.json"]
+device = pump
+use = model
+reporter = JSON
+
+[report "settings/active_basal_profile.json"]
+device = pump
+use = read_selected_basal_profile
+reporter = JSON
+
+[report "settings/profile.json"]
+use = shell
+bg_targets = settings/bg_targets.json
+settings = settings/settings.json
+basal_profile = settings/active_basal_profile.json
+reporter = text
+json_default = True
+max_iob = max_iob.json
+device = get-profile
+insulin_sensitivities = settings/insulin_sensitivities.json
+
+[report "monitor/pump-history.json"]
+device = pump
+hours = 5.0
+use = iter_pump_hours
+reporter = JSON
+
+[report "monitor/pump-history-zoned.json"]
+use = rezone
+reporter = JSON
+date = timestamp dateString start_at end_at created_at
+adjust = missing
+input = monitor/pump-history.json
+device = tz
+timezone = None
+astimezone = True
+
+[report "monitor/pump-history24h.json"]
+device = pump
+hours = 27.0
+use = iter_pump_hours
+reporter = JSON
+
+[report "monitor/pump-history24h-zoned.json"]
+use = rezone
+reporter = JSON
+date = timestamp dateString start_at end_at created_at
+adjust = missing
+input = monitor/pump-history24h.json
+device = tz
+timezone = None
+astimezone = True
+
+[report "monitor/clock.json"]
+device = pump
+use = read_clock
+reporter = JSON
+
+[report "monitor/model.json"]
+device = pump
+use = model
+reporter = JSON
+
+[report "monitor/iob.json"]
+profile = settings/profile.json
+use = shell
+reporter = JSON
+clock = monitor/clock.json
+json_default = True
+pumphistory = monitor/pump-history.json
+device = calculate-iob
+
+[report "monitor/temp_basal.json"]
+device = pump
+use = read_temp_basal
+reporter = JSON
+
+[report "enact/suggested.json"]
+profile = settings/profile.json
+use = shell
+temp_basal = monitor/temp_basal.json
+reporter = text
+json_default = True
+device = determine-basal
+iob = monitor/iob.json
+glucose = monitor/glucose-NS.json
+
+[report "monitor/clock-zoned.json"]
+use = clock
+reporter = JSON
+astimezone = False
+date = None
+adjust = missing
+input = monitor/clock.json
+device = tz
+timezone = PDT
+
+[report "monitor/reservoir.json"]
+device = pump
+use = reservoir
+reporter = JSON
+
+[report "monitor/battery.json"]
+device = pump
+use = read_battery_status
+reporter = JSON
+
+[report "monitor/status.json"]
+device = pump
+use = status
+reporter = JSON
+
+[report "last_five_pump_hours.json"]
+device = pump
+hours = 5.0
+use = iter_pump_hours
+reporter = JSON
+
+[report "last_five_cgm_hours.json"]
+device = cgm
+hours = 5.0
+use = iter_glucose_hours
+reporter = JSON
+
+[report "monitor/upload-status.json"]
+suggested = enact/suggested.json
+status = monitor/status.json
+use = shell
+reporter = JSON
+battery = monitor/battery.json
+clock = monitor/clock-zoned.json
+json_default = True
+reservior = monitor/reservoir.json
+device = ns-status
+remainder = 
+iob = monitor/iob.json
+enacted = enact/enacted.json
+args = 
+
+[device "ns-status"]
+fields = clock iob suggested enacted battery reservior status
+cmd = ns-status
+vendor = openaps.vendors.process
+args = 
+
+[device "oref0"]
+vendor = openaps.vendors.process
+extra = oref0.ini
+
+[device "get-profile"]
+vendor = openaps.vendors.process
+extra = get-profile.ini
+
+[device "calculate-iob"]
+vendor = openaps.vendors.process
+extra = calculate-iob.ini
+
+[device "determine-basal"]
+vendor = openaps.vendors.process
+extra = determine-basal.ini
+
+[device "tz"]
+vendor = openapscontrib.timezones
+extra = tz.ini
+
+[device "cgm"]
+vendor = openaps.vendors.dexcom
+extra = cgm.ini
+
+[device "curl"]
+fields = 
+cmd = bash
+vendor = openaps.vendors.process
+args = -c "curl -s https://mikestebbinscgmsite.azurewebsites.net/api/v1/entries.json | json -e 'this.glucose = this.sgv'"
+
+[device "pump"]
+vendor = mmeowlink.vendors.mmeowlink
+extra = pump.ini
+
+[vendor "openapscontrib.timezones"]
+path = .
+module = openapscontrib.timezones
+
+[vendor "mmeowlink.vendors.mmeowlink"]
+path = .
+module = mmeowlink.vendors.mmeowlink
