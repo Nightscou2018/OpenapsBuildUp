@@ -1,3 +1,6 @@
+2016-05-18:
+Everything running well for at least 2 weeks.  Last night, I flashed the TI-stick and modified my openaps.ini, preflight, loop and udev rules files to accomodate.  Ran well all last night and today.  This backup occurs prior to running GParted on the 16gb card to get it down below 8gb, to fit the backup card.
+
 
 2016-05-01:
 Closed day and night for ~48 hours.  Just addded reboot every 30 minutes during nighttime to cron, but haven't tested it yet (will do so night of 5/1)
