@@ -7,7 +7,8 @@ monitor-cgm = report invoke monitor/glucose.json
 preflight = ! bash -c "echo -n \"mmtune: \" && openaps use pump mmtune && rm -f monitor/clock.json && openaps report invoke monitor/clock.json 2>/dev/null && grep -q T monitor/clock.json && echo PREFLIGHT OK || (mm-stick warmup || (echo PREFLIGHT SLEEP && sleep 120); echo PREFLIGHT FAIL; exit 1)"
 preflight_carelink = ! bash -c "rm -f monitor/clock.json && openaps report invoke monitor/clock.json 2>/dev/null && grep -q T monitor/clock.json && echo PREFLIGHT OK || (mm-stick warmup || (echo PREFLIGHT SLEEP && sleep 120); echo PREFLIGHT FAIL; exit 1)"
 clear-files = ! bash -c "cd enact/;ls | grep -v "placeholder.file" | xargs rm -f;cd .. ;cd monitor/;ls | grep -v "placeholder.file" | xargs rm -f;cd ..;cd settings/;ls | grep -v "placeholder.file" | xargs rm -f;cd ..;cd upload/;ls | grep -v "placeholder.file" | xargs rm -f;cd .."
-loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps monitor-cgm-ns && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo No CGM data."
+get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps monitor-cgm 2>/dev/null || ( openaps monitor-cgm-ns; cp monitor/glucose-NS.json monitor/glucose.json )"
+loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps get-bg && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo Error during LOOP."
 retry-loop = ! bash -c "until(openaps preflight);do sleep 5; done && openaps loop"
 git-push = ! bash -c "git gc && (git add . && git commit --all -m '.' && git push --force) || (git remote add origin https://github.com/mikestebbins/openapsdev.git && git add . && git commit --all -m '.' && git push --force) || (git remote set-url https://github.com/mikestebbins/openapsdev.git && git add . && git commit --all -m '.' && git push --force) && echo 'pushed to github' || echo 'unable to push to github'"
 git-pull = ! bash -c "git gc && (git reset --hard origin/master) || (git remote add origin https://github.com/mikestebbins/openapsdev.git && git reset --hard origin/master) || (git remote set-url https://github.com/mikestebbins/openapsdev.git && git reset --hard origin/master) && echo 'successfully pulled from github' || echo 'unable to push to github'"
@@ -21,80 +22,6 @@ history = ! bash -c "(openaps report invoke monitor/model.json monitor/status.js
 history-retry = ! bash -c "openaps history || (echo history failed, waiting before trying again && sleep 5 && openaps history)"
 cleanup = ! bash -c "oref0-reset-git"
 crontest = ! bash -c "echo hey Mike >> test_log"
-
---------------------------------------------------------------------------------------------------
-My updated code
-JASONS
-get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps glucose-local 2>/dev/null || ( openaps glucose-ns && grep -q sgv monitor/glucose-ns.json && openaps use raw shell monitor/glucose-ns.json monitor/cal-ns.json 150 > monitor/glucose.json )"
-MINE 
-get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps monitor-cgm 2>/dev/null || ( openaps monitor-cgm-ns; cp monitor/glucose-NS.json monitor/glucose.json )"
-
-
-WAS
-loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps monitor-cgm-ns && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo No CGM data."
-IS
-loop = ! bash -c "openaps clear-files && (openaps gather-profile && openaps monitor-pump && openaps get-bg && openaps report invoke monitor/iob.json && openaps report invoke enact/suggested.json && ./enact.py) || echo Error during LOOP."
-
-LEAVE AS-IS
-[report "monitor/glucose.json"]
-device = cgm
-use = iter_glucose
-reporter = JSON
-count = 5
-
-[report "monitor/glucose-NS.json"]
-device = curl
-use = shell
-reporter = text
-
-WAS
-[report "enact/suggested.json"]
-profile = settings/profile.json
-use = shell
-temp_basal = monitor/temp_basal.json
-reporter = text
-json_default = True
-device = determine-basal
-iob = monitor/iob.json
-glucose = monitor/glucose-NS.json
-
-IS
-[report "enact/suggested.json"]
-profile = settings/profile.json
-use = shell
-temp_basal = monitor/temp_basal.json
-reporter = text
-json_default = True
-device = determine-basal
-iob = monitor/iob.json
-glucose = monitor/glucose.json
-
-
-
---------------------------------------------------------------------------------------------------
-Jasons code
-loop = ! bash -c "openaps preflight && openaps history-retry && openaps upload && openaps gather && openaps get-bg && openaps enact && openaps status-upload"
-
-get-bg = ! bash -c "rm -f monitor/glucose*.json && openaps glucose-local 2>/dev/null || ( openaps glucose-ns && grep -q sgv monitor/glucose-ns.json && openaps use raw shell monitor/glucose-ns.json monitor/cal-ns.json 150 > monitor/glucose.json )"
-
-wait-for-bg = ! bash -c "touch monitor/glucose.json; cp monitor/glucose.json monitor/last-glucose.json; while(diff -q monitor/last-glucose.json monitor/glucose.json); do echo -n .; sleep 10; openaps get-bg; done"
-
-
-glucose-local = report invoke monitor/glucose.json
-glucose-ns = report invoke monitor/glucose-ns.json monitor/cal-ns.json
-
-[report "monitor/glucose-ns.json"]
-device = ns-bgnow
-use = shell
-reporter = JSON
-
-[report "monitor/glucose.json"]
-device = cgm
-count = 5
-use = iter_glucose
-reporter = JSON
---------------------------------------------------------------------------------------------------
-
 
 [report "monitor/glucose.json"]
 device = cgm
@@ -212,7 +139,7 @@ reporter = text
 json_default = True
 device = determine-basal
 iob = monitor/iob.json
-glucose = monitor/glucose-NS.json
+glucose = monitor/glucose.json
 
 [report "monitor/clock-zoned.json"]
 use = clock
